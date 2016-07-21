@@ -13,6 +13,7 @@
     <logicalFolder name="SourceFiles"
                    displayName="Source Files"
                    projectFiles="true">
+      <itemPath>Common.cpp</itemPath>
       <itemPath>main.cpp</itemPath>
     </logicalFolder>
     <logicalFolder name="TestFiles"
@@ -40,6 +41,8 @@
           <standard>4</standard>
         </ccTool>
       </compileType>
+      <item path="Common.cpp" ex="false" tool="1" flavor2="0">
+      </item>
       <item path="Common.h" ex="false" tool="3" flavor2="0">
       </item>
       <item path="main.cpp" ex="false" tool="1" flavor2="0">
@@ -65,6 +68,8 @@
           <developmentMode>5</developmentMode>
         </asmTool>
       </compileType>
+      <item path="Common.cpp" ex="false" tool="1" flavor2="0">
+      </item>
       <item path="Common.h" ex="false" tool="3" flavor2="0">
       </item>
       <item path="main.cpp" ex="false" tool="1" flavor2="0">
