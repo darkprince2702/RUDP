@@ -27,6 +27,7 @@
 struct PacketHeaders {
     uint8_t type;
     uint32_t sequenceNumber;
+    uint32_t acknowledgmentNumber;
     uint8_t windowSize;
 };
 
