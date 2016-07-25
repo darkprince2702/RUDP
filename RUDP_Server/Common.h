@@ -9,6 +9,9 @@
 #define COMMON_H
 
 #include <assert.h>
+#include <stdint.h>
+#include<sys/socket.h>
+#include<netinet/in.h>
 
 /* State define */
 #define LISTEN 1  // Server listening
@@ -24,40 +27,40 @@
 #define CLOSED 11  // Timouted from TIME_WAIT (client) or received ACK in
                    // LAST_ACK state (server)
 
-struct PacketHeaders {
+/* Packet type define */
+#define DATA 0
+#define SYN 1
+#define SYN_ACK 2
+#define ACK 3
+#define FIN 4
+#define FIN_ACK 5
+#define RST 6
+
+/* Other define */
+#define WINDOWS_SIZE 65535
+
+struct PacketHeader {
     uint8_t type;
     uint32_t sequenceNumber;
     uint32_t acknowledgmentNumber;
-    uint8_t windowSize;
+    uint16_t windowSize;
+    uint16_t length;
 };
 
-void sendPacket(int fd, uint8_t type, uint32_t sequenceNumber, uint8_t* data, 
+struct Data {
+    uint8_t* data;
+    uint8_t length;
+    bool isACK;
+    bool isSent;
+};
+
+void sendPacket(int fd, sockaddr_in* addr, PacketHeader* header, uint8_t* data, 
         uint32_t dataLength);
 
 void receivePacket(int fd, uint8_t* buffer, uint32_t length);
 
-void processHeader(uint8_t* buffer, PacketHeaders& header);
+void processHeader(uint8_t* buffer, PacketHeader& header);
 
-void processData(uint8_t* buffer, uint32_t length);
-
-class Connection {
-private:
-    uint8_t state_;
-    uint32_t sequenceNumber_;
-    uint32_t nexReadSeqNum_;
-    uint8_t* buffer;
-public:
-    Connection();
-    void connect();
-    void sendData(uint8_t* data);
-    void close();
-};
-
-class Server {
-private:
-    
-public:
-    
-};
+void processData(uint8_t* buffer, uint8_t* data, uint8_t length);
 
 #endif /* COMMON_H */

@@ -16,22 +16,30 @@
 
 #include <event.h>
 #include <list>
+#include <map>
 #include <vector>
+#include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include "Common.h"
 
 class Server {
 public:
 
     class Connection {
     public:
-        void timeoutHandler(evutil_socket_t fd, short what, void *v);
-        Connection();
+        static void timeoutHandler(evutil_socket_t fd, short what, void *v);
+        Connection(int socket, sockaddr_in* clientAddr, uint8_t state, event_base* EVB);
         void registerEvents();
         void processPacket(uint8_t* data);
+        void transition(uint8_t* buffer);
     private:
-        sockaddr_in clientAddr;
+        int socket_;
+        sockaddr_in* clientAddr_;
         uint8_t state_;
-        uint32_t lastestAckNo_;
-        std::list<uint8_t*> buffer;
+        uint32_t receiveBase_;
+        uint32_t sendBase_;
+        std::map<uint32_t, Data*> data_;
         event_base* eventBase_;
         event* timeoutEvent_;
     };
@@ -42,15 +50,16 @@ public:
     void registerEvents();
     void serve();
     void stop();
-    void listenHandler(evutil_socket_t fd, short what, void *v);
+    static void listenHandler(evutil_socket_t fd, short what, void *v);
     event_base* getEventBase();
-    
+    void addConnection(Connection* conn);
+    Connection* getConnection(const sockaddr_in* address);
 private:
     int port_;
     int socket_;
     struct event_base* eventBase_;
     event* listenEvent_;
-    std::vector<Connection> connections_;
+    std::vector<Connection*> connections_;
 };
 
 #endif /* SERVER_H */

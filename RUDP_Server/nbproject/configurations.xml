@@ -42,6 +42,11 @@
         <ccTool>
           <standard>4</standard>
         </ccTool>
+        <linkerTool>
+          <linkerLibItems>
+            <linkerLibLibItem>event</linkerLibLibItem>
+          </linkerLibItems>
+        </linkerTool>
       </compileType>
       <item path="Common.cpp" ex="false" tool="1" flavor2="0">
       </item>
