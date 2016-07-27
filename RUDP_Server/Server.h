@@ -21,6 +21,11 @@
 #include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <fstream>
+#include <iostream>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include "Common.h"
 
 class Server {
@@ -31,21 +36,24 @@ public:
         static void timeoutHandler(evutil_socket_t fd, short what, void *v);
         Connection(int socket, sockaddr_in* clientAddr, uint8_t state, event_base* EVB);
         void registerEvents();
-        void processPacket(uint8_t* data);
         void transition(uint8_t* buffer);
+        void writeToFile();
     private:
         int socket_;
         sockaddr_in* clientAddr_;
         uint8_t state_;
         uint32_t receiveBase_;
         uint32_t sendBase_;
-        std::map<uint32_t, Data*> data_;
+        std::list<Data*> data_;
         event_base* eventBase_;
         event* timeoutEvent_;
+        timeval timeout_;
+        timeval start_;
+        timeval end_;
     };
 
     Server(int port);
-    virtual ~Server();
+    //    virtual ~Server();
     void createAndListenSocket();
     void registerEvents();
     void serve();

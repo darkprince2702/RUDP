@@ -12,14 +12,13 @@
  */
 
 #include <cstdlib>
+#include "Server.h"
 
 using namespace std;
 
-/*
- * 
- */
 int main(int argc, char** argv) {
-
+    Server* server = new Server(5050);
+    server->serve();
     return 0;
 }
 

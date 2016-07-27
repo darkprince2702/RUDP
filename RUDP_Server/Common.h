@@ -45,12 +45,14 @@ struct PacketHeader {
     uint32_t acknowledgmentNumber;
     uint16_t windowSize;
     uint16_t length;
+    uint8_t isEnd;
 };
 
 struct Data {
     uint8_t* data;
-    uint8_t length;
-    bool isACK;
+    uint32_t length;
+    uint32_t sequenceNumber;
+    bool isEnd;
     bool isSent;
 };
 

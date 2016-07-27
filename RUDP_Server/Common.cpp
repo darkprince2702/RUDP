@@ -7,6 +7,7 @@
 
 #include <string.h>
 #include <sys/socket.h>
+#include <stdio.h>
 
 #include "Common.h"
 
@@ -15,7 +16,7 @@ void processHeader(uint8_t* buffer, PacketHeader& header) {
 }
 
 void processData(uint8_t* buffer, uint8_t* data, uint8_t length) {
-    memcpy(data, buffer, length);
+    memcpy(data, buffer + sizeof(PacketHeader), length);
 }
 
 void sendPacket(int fd, sockaddr_in* addr, PacketHeader* header, uint8_t* data,
@@ -25,5 +26,8 @@ void sendPacket(int fd, sockaddr_in* addr, PacketHeader* header, uint8_t* data,
     if (data != NULL) {
         memcpy(buffer + sizeof (header), data, 1450);
     }
-    sendto(fd, buffer, sizeof(buffer), 0, (sockaddr*) addr, sizeof(*addr));
+    int nBytes = sendto(fd, buffer, sizeof(buffer), 0, (sockaddr*) addr, sizeof(*addr));
+    if (nBytes <= 0) {
+        perror("sendto");
+    }
 }
