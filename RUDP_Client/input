@@ -1,0 +1,20 @@
+  - Share Pointer.
+  - Scope lock.
+  - Concurrency on server.
+  - Naming in server.
+  - Number of object on a Thrift server.
+  - Singleton DP.
+  - Factory DP.
+
+
+
+Remember:
+  - "Using plain threads is considered a bad programming".
+  - "<T>(<T>& other)=delete;
+     <T>& operator=(const <T>& rhs)=delete;" -> prevent object copy.
+  - "Generalization of locking the mutexes in the same order is to have a hierarchy of mutexes. Then you only lock a mutex if it is high/low enough in the hierarchy".
+  - "Directive", often called include (as well as copy and import), that causes the contents of a second file to be inserted into the original file.
+
+Design Pattern:
+  + Creational patterns:
+    - Abstract Factory:

@@ -21,7 +21,6 @@ int main(int argc, char** argv) {
     Client* client = new Client();
     client->connect();
     // Read file
-    std::cout << "Go here 1\n";
     std::vector<uint8_t> buffer;
     uint8_t* data;
     char temp;
@@ -32,9 +31,8 @@ int main(int argc, char** argv) {
         buffer.push_back(static_cast<uint8_t>(temp));
     }
     data = &buffer[0];
-    std::cout << "Go here 2\n";
     client->send(data, buffer.size());
+    std::cout << "Send data end\n";
     client->disconnect();
     return 0;
 }
-

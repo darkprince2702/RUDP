@@ -33,11 +33,13 @@ public:
                 event_base* EVB);
         void registerEvents();
         void sendACK(uint32_t seqNo);
+        void sendFirstBatch();
         void sendData(Data* data);
         void transition(uint8_t* buffer);
         void breakLoop();
         void addData(Data* data);
         void setEndACK(uint32_t endACK);
+        uint32_t getSendBase(){return sendBase_;}
     private:
         int socket_;
         sockaddr_in* serverAddr_;
@@ -48,7 +50,7 @@ public:
         std::vector<Data*> data_;
         event_base* eventBase_;
         event* timeoutEvent_;
-        uint16_t windowsSize_;
+        uint16_t windowSize_;
         timeval timeOut_;
         timeval start_;
         timeval end_;

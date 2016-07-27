@@ -29,7 +29,10 @@ void Client::registerEvents() {
     if (event_ == NULL) {
         event_ = event_new(eventBase_, socket_, EV_READ | EV_PERSIST,
                 Client::listenHandler, this);
+    } else {
+        event_del(event_);
     }
+
     event_add(event_, 0);
 }
 
@@ -68,10 +71,14 @@ void Client::disconnect() {
 void Client::send(uint8_t* data, uint32_t size) {
     // Divide data into 1450-size chunk
     int nChunk = (size % 1450 == 0) ? size / 1450 : size / 1450 + 1;
+    uint32_t seqNo = connection_->getSendBase();
     for (int i = 0; i < nChunk; i++) {
-        Data* chunk = new Data;
+        Data* chunk = new Data();
         if (i != nChunk - 1) {
             chunk->length = 1450;
+            chunk->sequenceNumber = seqNo;
+            seqNo += chunk->length;
+            chunk->data = new uint8_t[chunk->length];
             memcpy(chunk->data, data + i * 1450, chunk->length);
             chunk->isSent = false;
         } else {
@@ -79,6 +86,9 @@ void Client::send(uint8_t* data, uint32_t size) {
             if (chunk->length == 0) {
                 chunk->length = 1450;
             }
+            chunk->sequenceNumber = seqNo;
+            seqNo += chunk->length;
+            chunk->data = new uint8_t[chunk->length];
             memcpy(chunk->data, data + i * 1450, chunk->length);
             chunk->isSent = false;
             chunk->isEnd = true;
@@ -86,6 +96,7 @@ void Client::send(uint8_t* data, uint32_t size) {
         connection_->addData(chunk);
     }
     connection_->setEndACK(size);
+    connection_->sendFirstBatch();
     registerEvents();
     runLoop();
 }
@@ -95,7 +106,13 @@ void Client::Connection::registerEvents() {
         eventBase_ = event_base_new();
     }
 
-    timeoutEvent_ = event_new(eventBase_, -1, 0, Connection::timeoutHandler, this);
+    if (timeoutEvent_ == NULL) {
+        timeoutEvent_ = event_new(eventBase_, -1, 0, Connection::timeoutHandler,
+                this);
+    } else {
+        event_del(timeoutEvent_);
+    }
+
     if (event_add(timeoutEvent_, 0) == -1) {
         perror("event_add()");
         return;
@@ -118,6 +135,9 @@ Client::Connection::Connection(int socket, sockaddr_in* serverAddr,
     serverAddr_ = serverAddr;
     state_ = state;
     eventBase_ = EVB;
+    timeoutEvent_ = NULL;
+    sendBase_ = 0;
+    receiveBase_ = 0;
 }
 
 void Client::Connection::transition(uint8_t* buffer) {
@@ -126,7 +146,7 @@ void Client::Connection::transition(uint8_t* buffer) {
         switch (state_) {
             case CLOSED:
                 sendHeader.type = SYN;
-                sendHeader.sequenceNumber = 0;
+                sendHeader.sequenceNumber = sendBase_;
                 sendPacket(socket_, serverAddr_, &sendHeader, NULL, 0);
                 state_ = SYN_SENT;
                 gettimeofday(&start_, NULL);
@@ -144,21 +164,26 @@ void Client::Connection::transition(uint8_t* buffer) {
         }
     } else {
         PacketHeader receivedHeader, sendHeader;
-        processHeader(buffer, receivedHeader);
+        processHeader(buffer, &receivedHeader);
         if (receivedHeader.type == SYN_ACK) {
             // Received a SYN-ACK from server, send ACK back
             gettimeofday(&end_, NULL);
             timeOut_.tv_sec = end_.tv_sec - start_.tv_sec;
             timeOut_.tv_usec = end_.tv_usec - start_.tv_usec;
-            sendACK(receivedHeader.sequenceNumber);
-            sendPacket(socket_, serverAddr_, &sendHeader, NULL, 0);
+            windowSize_ = receivedHeader.windowSize;
+            sendBase_ = receivedHeader.acknowledgmentNumber;
+            receiveBase_ = receivedHeader.acknowledgmentNumber + 1;
+            sendACK(receiveBase_);
+            state_ = ESTABLISHED;
             breakLoop();
         }
         if (receivedHeader.type == FIN) {
             if (state_ == FIN_WAIT_1) {
-                sendACK(receivedHeader.sequenceNumber);
+                receiveBase_ = receivedHeader.sequenceNumber + 1;
+                sendACK(receiveBase_);
             } else if (state_ == FIN_WAIT_2) {
-                sendACK(receivedHeader.sequenceNumber);
+                receiveBase_ = receivedHeader.sequenceNumber + 1;
+                sendACK(receiveBase_);
             } else {
                 // Wrong packet, do nothing
             }
@@ -185,7 +210,7 @@ void Client::Connection::transition(uint8_t* buffer) {
                     data_.erase(data_.begin()); // Delete ACKed chunk
                     sendBase_ = receivedHeader.acknowledgmentNumber;
                     // Loop through vector and send not-sent chunk
-                    for (int i = 0; i < windowsSize_ && i < data_.size(); i++) {
+                    for (int i = 0; i < windowSize_ && i < data_.size(); i++) {
                         if (data_[i]->isSent == false) {
                             sendData(data_[i]);
                             data_[i]->isSent = true;
@@ -207,7 +232,9 @@ void Client::Connection::sendACK(uint32_t seqNo) {
 
 void Client::Connection::sendData(Data* data) {
     PacketHeader sendHeader;
+    memset(&sendHeader, 0, sizeof(sendHeader));
     sendHeader.type = DATA;
+    sendHeader.acknowledgmentNumber = 100;
     sendHeader.sequenceNumber = data->sequenceNumber;
     sendHeader.length = data->length;
     if (data->isEnd) {
@@ -247,4 +274,14 @@ void Client::Connection::timeoutHandler(int fd, short what, void* v) {
         default:
             break;
     }
+}
+
+void Client::Connection::sendFirstBatch() {
+    for (int i = 0; i < windowSize_ && i < data_.size(); i++) {
+        if (data_[i]->isSent == false) {
+            sendData(data_[i]);
+            data_[i]->isSent = true;
+        }
+    }
+    registerEvents();
 }
