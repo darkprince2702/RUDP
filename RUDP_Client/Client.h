@@ -17,35 +17,54 @@
 #include "../RUDP_Server/Common.h"
 #include <event.h>
 #include <queue>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <iostream>
+#include <string>
 
 class Client {
 public:
-    
+
     class Connection {
     public:
         static void timeoutHandler(evutil_socket_t fd, short what, void *v);
-        Connection(int socket, sockaddr_in* clientAddr, uint8_t state, event_base* EVB);
+        Connection(int socket, sockaddr_in* serverAddr, uint8_t state,
+                event_base* EVB);
         void registerEvents();
-        void processPacket(uint8_t* data);
+        void sendACK(uint32_t seqNo);
+        void sendData(Data* data);
         void transition(uint8_t* buffer);
+        void breakLoop();
+        void addData(Data* data);
+        void setEndACK(uint32_t endACK);
     private:
         int socket_;
-        sockaddr_in* clientAddr_;
+        sockaddr_in* serverAddr_;
         uint8_t state_;
         uint32_t receiveBase_;
         uint32_t sendBase_;
-        std::queue<Data*> data_;
+        uint32_t endACK_;
+        std::vector<Data*> data_;
         event_base* eventBase_;
         event* timeoutEvent_;
+        uint16_t windowsSize_;
+        timeval timeOut_;
+        timeval start_;
+        timeval end_;
     };
-    
+
     Client();
-    virtual ~Client();
+//    virtual ~Client();
     void connect();
     void disconnect();
-    void sendData(uint8_t* data);
+    void send(uint8_t* data, uint32_t size);
+    void registerEvents();
+    static void listenHandler(evutil_socket_t fd, short what, void *v);
+    void runLoop();
 private:
     int socket_;
+    sockaddr_in* serverAddr_;
     event_base* eventBase_;
     event* event_;
     Connection* connection_;
