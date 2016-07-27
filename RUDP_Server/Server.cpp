@@ -52,7 +52,7 @@ void Server::createAndListenSocket() {
     serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
     memset(serverAddr.sin_zero, '\0', sizeof serverAddr.sin_zero);
     // Bind fd to addr
-    if (bind(fd, (sockaddr*) &serverAddr, sizeof(serverAddr)) == -1) {
+    if (bind(fd, (sockaddr*) & serverAddr, sizeof (serverAddr)) == -1) {
         freeaddrinfo(res0);
         perror("bind()");
         return;
@@ -117,7 +117,7 @@ void Server::stop() {
 }
 
 void Server::listenHandler(int fd, short what, void* v) {
-    std::cout << "Receive a packet from client\n";
+    std::cout << "Received 1 packet\n";
     Server* server = (Server*) v;
     // Receive a whole packet (1450 bytes) from client
     uint8_t* buffer = new uint8_t[1472];
@@ -128,7 +128,7 @@ void Server::listenHandler(int fd, short what, void* v) {
     // Pass buffer to connection
     Connection* conn;
     if ((conn = server->getConnection(clientAddr)) == NULL) {
-        std::cout << "Create a connection\n";
+        std::cout << "Created connection\n";
         conn = new Connection(server->socket_, clientAddr, CLOSED, server->eventBase_);
         server->addConnection(conn);
     }
@@ -145,10 +145,12 @@ Server::Connection::Connection(int socket, sockaddr_in* clientAddr, uint8_t stat
 }
 
 void Server::Connection::transition(uint8_t* buffer) {
-    std::cout << "Start connection's transition\n";
+    std::cout << "Transition\n";
     PacketHeader receivedHeader;
-    processHeader(buffer, receivedHeader);
+    processHeader(buffer, &receivedHeader);
+    std::cout << "Header type: " << (int) receivedHeader.type << std::endl;
     if (receivedHeader.type == SYN) {
+        std::cout << "Received SYN\n";
         if (state_ == CLOSED) {
             state_ = SYN_RECEIVED;
             PacketHeader sendHeader;
@@ -159,17 +161,18 @@ void Server::Connection::transition(uint8_t* buffer) {
             sendHeader.windowSize = 64;
             gettimeofday(&start_, NULL);
             sendPacket(socket_, clientAddr_, &sendHeader, NULL, 0);
-            std::cout << "Sent SYNC-ACK to client\n";
-            registerEvents();
+            std::cout << "Sent SYNC-ACK\n";
+            //            registerEvents();
         }
     }
     if (receivedHeader.type == ACK) {
+        std::cout << "Received ACK\n";
         switch (state_) {
             case SYN_RECEIVED:
                 state_ = ESTABLISHED;
                 gettimeofday(&end_, NULL);
-                timeout_.tv_sec = end_.tv_sec - start_.tv_sec;
-                timeout_.tv_usec = end_.tv_usec - start_.tv_usec;
+                timeout_.tv_sec = 10 * (end_.tv_sec - start_.tv_sec);
+                timeout_.tv_usec = 10 * (end_.tv_usec - start_.tv_usec);
                 sendBase_ = receivedHeader.acknowledgmentNumber;
                 break;
             case LAST_ACK:
@@ -181,6 +184,7 @@ void Server::Connection::transition(uint8_t* buffer) {
         }
     }
     if (receivedHeader.type == FIN) {
+        std::cout << "Received FIN\n";
         if (state_ != ESTABLISHED) {
             // @TODO: strange case
         }
@@ -190,6 +194,7 @@ void Server::Connection::transition(uint8_t* buffer) {
         sendHeader.type = ACK;
         sendHeader.acknowledgmentNumber = receivedHeader.sequenceNumber + 1;
         sendPacket(socket_, clientAddr_, &sendHeader, NULL, 0);
+        std::cout << "Sent ACK (CLOSE_WAIT)\n";
         // @TODO: clean work and about to disconnect
 
         state_ = LAST_ACK;
@@ -198,9 +203,11 @@ void Server::Connection::transition(uint8_t* buffer) {
         sendHeader.sequenceNumber = sendBase_;
         sendHeader.acknowledgmentNumber = 0;
         sendPacket(socket_, clientAddr_, &sendHeader, NULL, 0);
+        std::cout << "Sent FIN\n";
         registerEvents();
     }
     if (receivedHeader.type == DATA) {
+        std::cout << "Received DATA\n";
         // Check if receive correct packet
         if (receivedHeader.sequenceNumber == receiveBase_) {
             uint8_t* data = new uint8_t[receivedHeader.length];
@@ -217,6 +224,7 @@ void Server::Connection::transition(uint8_t* buffer) {
             sendHeader.acknowledgmentNumber = receiveBase_;
             sendHeader.windowSize = WINDOWS_SIZE;
             sendPacket(socket_, clientAddr_, &sendHeader, NULL, 0);
+            std::cout << "Sent ACK\n";
         }
     }
 }
@@ -246,6 +254,8 @@ void Server::Connection::registerEvents() {
     if (timeoutEvent_ == NULL) {
         timeoutEvent_ = event_new(eventBase_, -1, 0, Connection::timeoutHandler,
                 this);
+    } else {
+        event_del(timeoutEvent_);
     }
 
     if (event_add(timeoutEvent_, &timeout_) == -1) {
@@ -265,4 +275,10 @@ void Server::Connection::writeToFile() {
         fStream.write(reinterpret_cast<char*> ((*pList)->data), (*pList)->length);
     }
     fStream.close();
+}
+
+void Server::Connection::deleteEvents() {
+    if (timeoutEvent_ != NULL) {
+        event_del(timeoutEvent_);
+    }
 }

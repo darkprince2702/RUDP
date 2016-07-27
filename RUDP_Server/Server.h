@@ -38,6 +38,7 @@ public:
         void registerEvents();
         void transition(uint8_t* buffer);
         void writeToFile();
+        void deleteEvents();
     private:
         int socket_;
         sockaddr_in* clientAddr_;

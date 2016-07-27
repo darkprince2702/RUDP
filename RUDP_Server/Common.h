@@ -41,10 +41,10 @@
 
 struct PacketHeader {
     uint8_t type;
+    uint16_t length;
     uint32_t sequenceNumber;
     uint32_t acknowledgmentNumber;
     uint16_t windowSize;
-    uint16_t length;
     uint8_t isEnd;
 };
 
@@ -61,7 +61,7 @@ void sendPacket(int fd, sockaddr_in* addr, PacketHeader* header, uint8_t* data,
 
 void receivePacket(int fd, uint8_t* buffer, uint32_t length);
 
-void processHeader(uint8_t* buffer, PacketHeader& header);
+void processHeader(uint8_t* buffer, PacketHeader* header);
 
 void processData(uint8_t* buffer, uint8_t* data, uint8_t length);
 

@@ -8,11 +8,11 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <stdio.h>
-
+#include <iostream>
 #include "Common.h"
 
-void processHeader(uint8_t* buffer, PacketHeader& header) {
-    memcpy(&header, buffer, sizeof(header));
+void processHeader(uint8_t* buffer, PacketHeader* header) {
+    memcpy(header, buffer, sizeof(PacketHeader));
 }
 
 void processData(uint8_t* buffer, uint8_t* data, uint8_t length) {
@@ -22,9 +22,11 @@ void processData(uint8_t* buffer, uint8_t* data, uint8_t length) {
 void sendPacket(int fd, sockaddr_in* addr, PacketHeader* header, uint8_t* data,
         uint32_t dataLength) {
     uint8_t buffer[1472];
-    memcpy(buffer, header, sizeof (header));
+    memset(buffer, 0, 1472);
+    std::cout << "Sent header: " << (int) header->type << std::endl;
+    memcpy(buffer, header, sizeof (PacketHeader));
     if (data != NULL) {
-        memcpy(buffer + sizeof (header), data, 1450);
+        memcpy(buffer + sizeof (PacketHeader), data, dataLength);
     }
     int nBytes = sendto(fd, buffer, sizeof(buffer), 0, (sockaddr*) addr, sizeof(*addr));
     if (nBytes <= 0) {
