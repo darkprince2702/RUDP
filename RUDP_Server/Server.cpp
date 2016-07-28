@@ -22,38 +22,20 @@ Server::Server(int port) {
 
 void Server::createAndListenSocket() {
     int fd, error;
-    char port[sizeof ("65536") + 1];
-    struct addrinfo hints, *res, *res0;
     struct sockaddr_in serverAddr;
-    // Initialize hints
-    memset(&hints, 0, sizeof (hints));
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_DGRAM;
-    hints.ai_flags = AI_PASSIVE;
-    sprintf(port, "%d", port_);
-    if ((error = getaddrinfo(NULL, port, &hints, &res0))) {
-        perror("getaddrinfo()");
-        return;
-    }
-    for (res = res0; res != NULL; res = res->ai_next) {
-        if (res->ai_family == AF_INET6 || res->ai_next == NULL) {
-            break;
-        }
-    }
     // Create socket fd
     if ((fd = socket(PF_INET, SOCK_DGRAM, 0)) == -1) {
-        freeaddrinfo(res0);
         perror("socket()");
         return;
     }
+    std::cout << "Server FD is: " << fd << std::endl;
     // Initial struct
     serverAddr.sin_family = AF_INET;
-    serverAddr.sin_port = htons(5050);
-    serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    serverAddr.sin_port = htons(port_);
+    serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
     memset(serverAddr.sin_zero, '\0', sizeof serverAddr.sin_zero);
     // Bind fd to addr
-    if (bind(fd, (sockaddr*) & serverAddr, sizeof (serverAddr)) == -1) {
-        freeaddrinfo(res0);
+    if (bind(fd, (sockaddr*) & serverAddr, sizeof serverAddr) == -1) {
         perror("bind()");
         return;
     }
@@ -66,7 +48,7 @@ void Server::createAndListenSocket() {
     }
 
     socket_ = fd;
-    std::cout << "Sever binded to port " << port << std::endl;
+    std::cout << "Sever binded to port " << port_ << std::endl;
 }
 
 void Server::addConnection(Connection* conn) {
@@ -120,10 +102,11 @@ void Server::listenHandler(int fd, short what, void* v) {
     std::cout << "Received 1 packet\n";
     Server* server = (Server*) v;
     // Receive a whole packet (1450 bytes) from client
+    int bufferSize = 1472;
     uint8_t* buffer = new uint8_t[1472];
     sockaddr_in* clientAddr;
-    socklen_t clientAddrLen = sizeof (*clientAddr);
-    int nBytes = recvfrom(server->socket_, buffer, sizeof (buffer), 0,
+    socklen_t clientAddrLen = sizeof (sockaddr_in);
+    int nBytes = recvfrom(server->socket_, buffer, bufferSize, 0,
             (sockaddr*) clientAddr, &clientAddrLen);
     // Pass buffer to connection
     Connection* conn;

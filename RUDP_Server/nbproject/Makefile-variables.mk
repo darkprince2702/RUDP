@@ -7,13 +7,13 @@ CND_BASEDIR=`pwd`
 CND_BUILDDIR=build
 CND_DISTDIR=dist
 # Debug configuration
-CND_PLATFORM_Debug=GNU-Linux
-CND_ARTIFACT_DIR_Debug=dist/Debug/GNU-Linux
+CND_PLATFORM_Debug=CLang-Linux
+CND_ARTIFACT_DIR_Debug=dist/Debug/CLang-Linux
 CND_ARTIFACT_NAME_Debug=rudp_server
-CND_ARTIFACT_PATH_Debug=dist/Debug/GNU-Linux/rudp_server
-CND_PACKAGE_DIR_Debug=dist/Debug/GNU-Linux/package
+CND_ARTIFACT_PATH_Debug=dist/Debug/CLang-Linux/rudp_server
+CND_PACKAGE_DIR_Debug=dist/Debug/CLang-Linux/package
 CND_PACKAGE_NAME_Debug=rudpserver.tar
-CND_PACKAGE_PATH_Debug=dist/Debug/GNU-Linux/package/rudpserver.tar
+CND_PACKAGE_PATH_Debug=dist/Debug/CLang-Linux/package/rudpserver.tar
 # Release configuration
 CND_PLATFORM_Release=GNU-Linux
 CND_ARTIFACT_DIR_Release=dist/Release/GNU-Linux
