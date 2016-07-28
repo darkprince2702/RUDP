@@ -15,7 +15,7 @@ void processHeader(uint8_t* buffer, PacketHeader* header) {
     memcpy(header, buffer, sizeof(PacketHeader));
 }
 
-void processData(uint8_t* buffer, uint8_t* data, uint8_t length) {
+void processData(uint8_t* buffer, uint8_t* data, uint32_t length) {
     memcpy(data, buffer + sizeof(PacketHeader), length);
 }
 

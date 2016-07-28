@@ -37,7 +37,9 @@
 #define RST 6
 
 /* Other define */
-#define WINDOWS_SIZE 65535
+#define WINDOW_SIZE 45
+#define ALPHA 125
+#define BETA 250
 
 struct PacketHeader {
     uint8_t type;
@@ -63,6 +65,6 @@ void receivePacket(int fd, uint8_t* buffer, uint32_t length);
 
 void processHeader(uint8_t* buffer, PacketHeader* header);
 
-void processData(uint8_t* buffer, uint8_t* data, uint8_t length);
+void processData(uint8_t* buffer, uint8_t* data, uint32_t length);
 
 #endif /* COMMON_H */

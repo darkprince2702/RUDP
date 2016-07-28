@@ -24,7 +24,7 @@ void Server::createAndListenSocket() {
     int fd, error;
     struct sockaddr_in serverAddr;
     // Create socket fd
-    if ((fd = socket(PF_INET, SOCK_DGRAM, 0)) == -1) {
+    if ((fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1) {
         perror("socket()");
         return;
     }
@@ -33,9 +33,9 @@ void Server::createAndListenSocket() {
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_port = htons(port_);
     serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    memset(serverAddr.sin_zero, '\0', sizeof serverAddr.sin_zero);
+    //    memset(serverAddr.sin_zero, '\0', sizeof serverAddr.sin_zero);
     // Bind fd to addr
-    if (bind(fd, (sockaddr*) & serverAddr, sizeof serverAddr) == -1) {
+    if (bind(fd, (sockaddr*) &serverAddr, sizeof serverAddr) == -1) {
         perror("bind()");
         return;
     }
@@ -103,8 +103,8 @@ void Server::listenHandler(int fd, short what, void* v) {
     Server* server = (Server*) v;
     // Receive a whole packet (1450 bytes) from client
     int bufferSize = 1472;
-    uint8_t* buffer = new uint8_t[1472];
-    sockaddr_in* clientAddr;
+    uint8_t* buffer = new uint8_t[bufferSize];
+    sockaddr_in* clientAddr = new sockaddr_in();
     socklen_t clientAddrLen = sizeof (sockaddr_in);
     int nBytes = recvfrom(server->socket_, buffer, bufferSize, 0,
             (sockaddr*) clientAddr, &clientAddrLen);
@@ -141,7 +141,7 @@ void Server::Connection::transition(uint8_t* buffer) {
             sendHeader.sequenceNumber = sendBase_;
             receiveBase_ = receivedHeader.sequenceNumber + 1;
             sendHeader.acknowledgmentNumber = receiveBase_;
-            sendHeader.windowSize = 64;
+            sendHeader.windowSize = WINDOW_SIZE;
             gettimeofday(&start_, NULL);
             sendPacket(socket_, clientAddr_, &sendHeader, NULL, 0);
             std::cout << "Sent SYNC-ACK\n";
@@ -160,6 +160,9 @@ void Server::Connection::transition(uint8_t* buffer) {
                 break;
             case LAST_ACK:
                 // @TODO: close connection
+                writeToFile();
+                state_ = CLOSED;
+                event_base_loopbreak(eventBase_);
                 break;
             default:
                 // @TODO: received wrong package
@@ -192,10 +195,13 @@ void Server::Connection::transition(uint8_t* buffer) {
     if (receivedHeader.type == DATA) {
         std::cout << "Received DATA\n";
         // Check if receive correct packet
+        std::cout << "Compare: " << receivedHeader.sequenceNumber << " - " <<
+                receiveBase_ << std::endl;
         if (receivedHeader.sequenceNumber == receiveBase_) {
             uint8_t* data = new uint8_t[receivedHeader.length];
             processData(buffer, data, receivedHeader.length);
-            Data* strData;
+            std::cout << "Processed data\n";
+            Data* strData = new Data();
             strData->data = data;
             strData->length = receivedHeader.length;
             // Store in memory
@@ -205,9 +211,9 @@ void Server::Connection::transition(uint8_t* buffer) {
             PacketHeader sendHeader;
             sendHeader.type = ACK;
             sendHeader.acknowledgmentNumber = receiveBase_;
-            sendHeader.windowSize = WINDOWS_SIZE;
+            sendHeader.windowSize = WINDOW_SIZE;
             sendPacket(socket_, clientAddr_, &sendHeader, NULL, 0);
-            std::cout << "Sent ACK\n";
+            // std::cout << "Sent ACK with sequence number: " << receiveBase_;
         }
     }
 }
@@ -219,7 +225,7 @@ void Server::Connection::timeoutHandler(int fd, short what, void* v) {
         sendHeader.type = SYN_ACK;
         sendHeader.sequenceNumber = conn->sendBase_;
         sendHeader.acknowledgmentNumber = conn->receiveBase_;
-        sendHeader.windowSize = 64;
+        sendHeader.windowSize = WINDOW_SIZE;
         sendPacket(conn->socket_, conn->clientAddr_, &sendHeader, NULL, 0);
     } else if (conn->state_ == LAST_ACK) {
         sendHeader.type = FIN;
