@@ -22,6 +22,7 @@
 #include <arpa/inet.h>
 #include <iostream>
 #include <string>
+#include <stdlib.h>
 
 class Client {
 public:
@@ -35,11 +36,16 @@ public:
         void sendACK(uint32_t seqNo);
         void sendFirstBatch();
         void sendData(Data* data);
+        void resend();
         void transition(uint8_t* buffer);
         void breakLoop();
         void addData(Data* data);
         void setEndACK(uint32_t endACK);
         uint32_t getSendBase(){return sendBase_;}
+        void markStartTime();
+        void markEndTime();
+        void calculateTime();
+        int nTimeout;
     private:
         int socket_;
         sockaddr_in* serverAddr_;
@@ -51,9 +57,11 @@ public:
         event_base* eventBase_;
         event* timeoutEvent_;
         uint16_t windowSize_;
-        timeval timeOut_;
-        timeval start_;
-        timeval end_;
+        timeval RTT_;
+        timeval devRTT_;
+        timeval RTO_;
+        timeval timeStart_;
+        timeval timeEnd_;
     };
 
     Client();

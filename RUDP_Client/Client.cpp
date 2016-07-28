@@ -44,7 +44,7 @@ void Client::connect() {
     int clientSocket;
     sockaddr_in* serverAddr = new sockaddr_in();
     // Create UDP socket
-    if ((clientSocket = socket(PF_INET, SOCK_DGRAM, 0)) == -1) {
+    if ((clientSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1) {
         perror("socket()");
         return;
     }
@@ -52,8 +52,9 @@ void Client::connect() {
     // Configure address struct
     serverAddr->sin_family = AF_INET;
     serverAddr->sin_port = htons(5050);
-    serverAddr->sin_addr.s_addr = htonl(INADDR_ANY);
-    memset(serverAddr->sin_zero, '\0', sizeof (serverAddr->sin_zero));
+    const char serverIP[] = "118.102.6.118";
+    serverAddr->sin_addr.s_addr = inet_addr(serverIP);
+    inet_pton(AF_INET, serverIP, &serverAddr->sin_addr);
     // Done, assign to real variable
     socket_ = clientSocket;
     serverAddr_ = serverAddr;
@@ -67,6 +68,8 @@ void Client::connect() {
 
 void Client::disconnect() {
     connection_->transition(NULL);
+    runLoop();
+    std::cout << "Number of timeout: " << connection_->nTimeout << std::endl;
 }
 
 void Client::send(uint8_t* data, uint32_t size) {
@@ -114,14 +117,14 @@ void Client::Connection::registerEvents() {
         event_del(timeoutEvent_);
     }
 
-    if (event_add(timeoutEvent_, 0) == -1) {
+    if (event_add(timeoutEvent_, &RTO_) == -1) {
         perror("event_add()");
         return;
     }
 }
 
 void Client::listenHandler(int fd, short what, void* v) {
-    std::cout << "Receive\n";
+    std::cout << "Receive 1 packet\n";
     Client* client = (Client*) v;
     uint8_t* buffer = new uint8_t[1472];
     unsigned int addrLen = sizeof (sockaddr_in);
@@ -139,6 +142,7 @@ Client::Connection::Connection(int socket, sockaddr_in* serverAddr,
     timeoutEvent_ = NULL;
     sendBase_ = 0;
     receiveBase_ = 0;
+    RTO_.tv_sec = 1;
 }
 
 void Client::Connection::transition(uint8_t* buffer) {
@@ -146,14 +150,16 @@ void Client::Connection::transition(uint8_t* buffer) {
         PacketHeader sendHeader;
         switch (state_) {
             case CLOSED:
+                // Send SYN packet
                 sendHeader.type = SYN;
                 sendHeader.sequenceNumber = sendBase_;
                 sendPacket(socket_, serverAddr_, &sendHeader, NULL, 0);
+                markStartTime();
                 state_ = SYN_SENT;
-                gettimeofday(&start_, NULL);
                 registerEvents();
                 break;
             case ESTABLISHED:
+                // Send FIN packet
                 sendHeader.type = FIN;
                 sendHeader.sequenceNumber = sendBase_;
                 sendPacket(socket_, serverAddr_, &sendHeader, NULL, 0);
@@ -168,9 +174,8 @@ void Client::Connection::transition(uint8_t* buffer) {
         processHeader(buffer, &receivedHeader);
         if (receivedHeader.type == SYN_ACK) {
             // Received a SYN-ACK from server, send ACK back
-            gettimeofday(&end_, NULL);
-            timeOut_.tv_sec = end_.tv_sec - start_.tv_sec;
-            timeOut_.tv_usec = end_.tv_usec - start_.tv_usec;
+            markEndTime();
+            calculateTime();
             windowSize_ = receivedHeader.windowSize;
             sendBase_ = receivedHeader.acknowledgmentNumber;
             receiveBase_ = receivedHeader.acknowledgmentNumber + 1;
@@ -179,6 +184,8 @@ void Client::Connection::transition(uint8_t* buffer) {
             breakLoop();
         }
         if (receivedHeader.type == FIN) {
+            markEndTime();
+            calculateTime();
             if (state_ == FIN_WAIT_1) {
                 receiveBase_ = receivedHeader.sequenceNumber + 1;
                 sendACK(receiveBase_);
@@ -193,6 +200,8 @@ void Client::Connection::transition(uint8_t* buffer) {
             breakLoop();
         }
         if (receivedHeader.type == ACK) {
+            markEndTime();
+            calculateTime();
             if (state_ == FIN_WAIT_1) {
                 // Switch to FIN-WAIT-2
                 state_ = FIN_WAIT_2;
@@ -217,6 +226,7 @@ void Client::Connection::transition(uint8_t* buffer) {
                             data_[i]->isSent = true;
                         }
                     }
+                    markStartTime();
                 }
                 registerEvents();
             }
@@ -233,7 +243,7 @@ void Client::Connection::sendACK(uint32_t seqNo) {
 
 void Client::Connection::sendData(Data* data) {
     PacketHeader sendHeader;
-    memset(&sendHeader, 0, sizeof(sendHeader));
+    memset(&sendHeader, 0, sizeof (sendHeader));
     sendHeader.type = DATA;
     sendHeader.acknowledgmentNumber = 100;
     sendHeader.sequenceNumber = data->sequenceNumber;
@@ -244,6 +254,8 @@ void Client::Connection::sendData(Data* data) {
         sendHeader.isEnd = 0;
     }
     sendPacket(socket_, serverAddr_, &sendHeader, data->data, data->length);
+    std::cout << "Send data with sequence: " << sendHeader.sequenceNumber <<
+            std::endl;
 }
 
 void Client::Connection::addData(Data* data) {
@@ -255,18 +267,19 @@ void Client::Connection::breakLoop() {
 }
 
 void Client::Connection::setEndACK(uint32_t endACK) {
-    endACK_ = endACK;
+    endACK_ = sendBase_ + endACK;
 }
 
 void Client::Connection::timeoutHandler(int fd, short what, void* v) {
     Connection* conn = (Connection*) v;
+    std::cout << "Timeout invoke with state: " << (int) conn->state_ << std::endl;
     switch (conn->state_) {
         case SYN_SENT:
             conn->state_ = CLOSED;
             conn->transition(NULL);
             break;
         case ESTABLISHED:
-            conn->sendData(conn->data_.front());
+            conn->resend();
             break;
         case FIN_WAIT_1:
             conn->state_ = ESTABLISHED;
@@ -275,6 +288,7 @@ void Client::Connection::timeoutHandler(int fd, short what, void* v) {
         default:
             break;
     }
+    conn->nTimeout++;
 }
 
 void Client::Connection::sendFirstBatch() {
@@ -284,5 +298,51 @@ void Client::Connection::sendFirstBatch() {
             data_[i]->isSent = true;
         }
     }
+    markStartTime();
     registerEvents();
+}
+
+void Client::Connection::resend() {
+    std::cout << "Resend data\n";
+    for (int i = 0; i < windowSize_ && i < data_.size(); i++) {
+        sendData(data_[i]);
+        if (data_[i]->isSent == false) {
+            data_[i]->isSent = true;
+        }
+    }
+    markStartTime();
+    registerEvents();
+}
+
+void Client::Connection::markStartTime() {
+    timeval now;
+    gettimeofday(&now, NULL);
+    if (now.tv_sec > timeStart_.tv_sec && now.tv_usec > timeStart_.tv_usec) {
+        timeStart_ = now;
+    }
+}
+
+void Client::Connection::markEndTime() {
+    timeval now;
+    gettimeofday(&now, NULL);
+    if (now.tv_sec > timeEnd_.tv_sec && now.tv_usec > timeEnd_.tv_usec) {
+        timeEnd_ = now;
+    }
+}
+
+void Client::Connection::calculateTime() {
+    time_t sampleRTTSec = timeEnd_.tv_sec - timeStart_.tv_sec;
+    time_t sampleRTTUSec = timeEnd_.tv_usec - timeStart_.tv_usec;
+    // New RTT is average of current RTT and time between timeStart and timeEnd
+    devRTT_.tv_sec = ((1000 - BETA) * devRTT_.tv_sec + BETA * abs(sampleRTTSec - RTT_.tv_sec)) / 1000;
+    devRTT_.tv_usec = ((1000 - BETA) * devRTT_.tv_usec + BETA * abs(sampleRTTUSec - RTT_.tv_usec)) / 1000;
+    RTT_.tv_sec = ((1000 - ALPHA) * RTT_.tv_sec + ALPHA * sampleRTTSec) / 1000;
+    RTT_.tv_usec = ((1000 - ALPHA) * RTT_.tv_usec + ALPHA * sampleRTTUSec) / 1000;
+    // Calculate new RTO
+    RTO_.tv_sec = RTT_.tv_sec + 4 * devRTT_.tv_sec;
+    RTO_.tv_usec = RTT_.tv_usec + 4 * devRTT_.tv_usec;
+//    std::cout << "New RTT: " << RTT_.tv_sec << " sec, " << RTT_.tv_usec <<
+//            " microsecond\n";
+//    std::cout << "New RTO: " << RTO_.tv_sec << " sec, " << RTO_.tv_usec <<
+//            " microsecond\n";
 }
