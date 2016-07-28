@@ -48,10 +48,11 @@ void Client::connect() {
         perror("socket()");
         return;
     }
+    std::cout << "Client FD is: " << clientSocket << std::endl;
     // Configure address struct
     serverAddr->sin_family = AF_INET;
     serverAddr->sin_port = htons(5050);
-    serverAddr->sin_addr.s_addr = inet_addr("127.0.0.1");
+    serverAddr->sin_addr.s_addr = htonl(INADDR_ANY);
     memset(serverAddr->sin_zero, '\0', sizeof (serverAddr->sin_zero));
     // Done, assign to real variable
     socket_ = clientSocket;
@@ -123,7 +124,7 @@ void Client::listenHandler(int fd, short what, void* v) {
     std::cout << "Receive\n";
     Client* client = (Client*) v;
     uint8_t* buffer = new uint8_t[1472];
-    unsigned int addrLen = sizeof (*client->serverAddr_);
+    unsigned int addrLen = sizeof (sockaddr_in);
     int nBytes = recvfrom(fd, buffer, 1472, 0, (sockaddr*) client->serverAddr_,
             &addrLen);
     client->connection_->transition(buffer);
