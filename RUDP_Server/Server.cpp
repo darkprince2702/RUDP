@@ -35,7 +35,7 @@ void Server::createAndListenSocket() {
     serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
     //    memset(serverAddr.sin_zero, '\0', sizeof serverAddr.sin_zero);
     // Bind fd to addr
-    if (bind(fd, (sockaddr*) &serverAddr, sizeof serverAddr) == -1) {
+    if (bind(fd, (sockaddr*) & serverAddr, sizeof serverAddr) == -1) {
         perror("bind()");
         return;
     }
@@ -125,6 +125,7 @@ Server::Connection::Connection(int socket, sockaddr_in* clientAddr, uint8_t stat
     eventBase_ = EVB;
     sendBase_ = 0;
     receiveBase_ = 0;
+    timeout_.tv_sec = 1;
 }
 
 void Server::Connection::transition(uint8_t* buffer) {
@@ -198,6 +199,12 @@ void Server::Connection::transition(uint8_t* buffer) {
         std::cout << "Compare: " << receivedHeader.sequenceNumber << " - " <<
                 receiveBase_ << std::endl;
         if (receivedHeader.sequenceNumber == receiveBase_) {
+            receiveBase_ += receivedHeader.length;
+            PacketHeader sendHeader;
+            sendHeader.type = ACK;
+            sendHeader.acknowledgmentNumber = receiveBase_;
+            sendHeader.windowSize = WINDOW_SIZE;
+            sendPacket(socket_, clientAddr_, &sendHeader, NULL, 0);
             uint8_t* data = new uint8_t[receivedHeader.length];
             processData(buffer, data, receivedHeader.length);
             std::cout << "Processed data\n";
@@ -206,14 +213,14 @@ void Server::Connection::transition(uint8_t* buffer) {
             strData->length = receivedHeader.length;
             // Store in memory
             data_.push_back(strData);
-            receiveBase_ += receivedHeader.length;
             // Send ACK to client
+            // std::cout << "Sent ACK with sequence number: " << receiveBase_;
+        } else {
             PacketHeader sendHeader;
             sendHeader.type = ACK;
             sendHeader.acknowledgmentNumber = receiveBase_;
             sendHeader.windowSize = WINDOW_SIZE;
             sendPacket(socket_, clientAddr_, &sendHeader, NULL, 0);
-            // std::cout << "Sent ACK with sequence number: " << receiveBase_;
         }
     }
 }
