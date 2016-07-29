@@ -216,7 +216,9 @@ void Client::Connection::transition(uint8_t* buffer) {
                     breakLoop();
                     return;
                 }
-                if (receivedHeader.acknowledgmentNumber - sendBase_ <= 1450) {
+                std::cout << "Compare: " << receivedHeader.acknowledgmentNumber << " - " <<
+                sendBase_ << std::endl;
+                if (receivedHeader.acknowledgmentNumber > sendBase_) {
                     data_.erase(data_.begin()); // Delete ACKed chunk
                     sendBase_ = receivedHeader.acknowledgmentNumber;
                     // Loop through vector and send not-sent chunk
