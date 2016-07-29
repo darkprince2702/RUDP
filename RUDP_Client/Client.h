@@ -15,14 +15,16 @@
 #define CLIENT_H
 
 #include "../RUDP_Server/Common.h"
-#include <event.h>
-#include <queue>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <stdlib.h>
+#include <event.h>
+#include <queue>
 #include <iostream>
 #include <string>
-#include <stdlib.h>
+#include <cstring>
+#include <list>
 
 class Client {
 public:
@@ -34,14 +36,21 @@ public:
                 event_base* EVB);
         void registerEvents();
         void sendACK(uint32_t seqNo);
-        void sendFirstBatch();
+        void sendCurrentWindow(bool isFirst = false);
         void sendData(Data* data);
         void resend();
         void transition(uint8_t* buffer);
         void breakLoop();
         void addData(Data* data);
         void setEndACK(uint32_t endACK);
-        uint32_t getSendBase(){return sendBase_;}
+
+        uint32_t getSendBase() {
+            return sendBase_;
+        }
+
+        void setUnACKedNumber_(uint16_t num) {
+            unACKedCounter_ = num;
+        }
         void markStartTime();
         void markEndTime();
         void calculateTime();
@@ -52,7 +61,10 @@ public:
         uint8_t state_;
         uint32_t receiveBase_;
         uint32_t sendBase_;
+        uint16_t unACKedCounter_;
         uint32_t endACK_;
+        uint32_t lastestACK_;
+        uint8_t duplicateACK_;
         std::vector<Data*> data_;
         event_base* eventBase_;
         event* timeoutEvent_;
@@ -65,7 +77,7 @@ public:
     };
 
     Client();
-//    virtual ~Client();
+    //    virtual ~Client();
     void connect();
     void disconnect();
     void send(uint8_t* data, uint32_t size);

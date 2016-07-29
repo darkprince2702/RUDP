@@ -12,7 +12,7 @@
  */
 
 #include "Client.h"
-#include <cstring>
+
 
 Client::Client() {
     socket_ = -1;
@@ -100,7 +100,7 @@ void Client::send(uint8_t* data, uint32_t size) {
         connection_->addData(chunk);
     }
     connection_->setEndACK(size);
-    connection_->sendFirstBatch();
+    connection_->sendCurrentWindow(true);
     registerEvents();
     runLoop();
 }
@@ -143,6 +143,7 @@ Client::Connection::Connection(int socket, sockaddr_in* serverAddr,
     sendBase_ = 0;
     receiveBase_ = 0;
     RTO_.tv_sec = 1;
+    duplicateACK_ = 0;
 }
 
 void Client::Connection::transition(uint8_t* buffer) {
@@ -216,19 +217,31 @@ void Client::Connection::transition(uint8_t* buffer) {
                     breakLoop();
                     return;
                 }
-                std::cout << "Compare: " << receivedHeader.acknowledgmentNumber << " - " <<
-                sendBase_ << std::endl;
-                if (receivedHeader.acknowledgmentNumber > sendBase_) {
-                    data_.erase(data_.begin()); // Delete ACKed chunk
-                    sendBase_ = receivedHeader.acknowledgmentNumber;
-                    // Loop through vector and send not-sent chunk
-                    for (int i = 0; i < windowSize_ && i < data_.size(); i++) {
-                        if (data_[i]->isSent == false) {
-                            sendData(data_[i]);
-                            data_[i]->isSent = true;
-                        }
+                std::cout << "Compare: " << receivedHeader.acknowledgmentNumber
+                        << " - " << sendBase_ << std::endl;
+                if (receivedHeader.acknowledgmentNumber >= sendBase_) {
+                    // Remove all ACKed chunk and decrease UnACKed counter
+                    while (data_.size() && data_[0]->sequenceNumber
+                            < receivedHeader.acknowledgmentNumber) {
+                        data_.erase(data_.begin());
+                        unACKedCounter_--;
                     }
-                    markStartTime();
+                    // Update the send base an unACKed counter
+                    sendBase_ = receivedHeader.acknowledgmentNumber;
+                    if (unACKedCounter_ <= 0) {
+                        unACKedCounter_ = windowSize_;
+                        sendCurrentWindow();
+                    }
+                    // Fast retransmit after 3 duplicate ACK
+//                    if (receivedHeader.acknowledgmentNumber == lastestACK_) {
+//                        if (++duplicateACK_ >= 3) {
+//                            std::cout << "3 duplicate ACK, resend packet\n";
+//                            resend();
+//                        }
+//                    } else {
+//                        lastestACK_ = receivedHeader.acknowledgmentNumber;
+//                        duplicateACK_ = 0;
+//                    }
                 }
                 registerEvents();
             }
@@ -293,12 +306,12 @@ void Client::Connection::timeoutHandler(int fd, short what, void* v) {
     conn->nTimeout++;
 }
 
-void Client::Connection::sendFirstBatch() {
-    for (int i = 0; i < windowSize_ && i < data_.size(); i++) {
-        if (data_[i]->isSent == false) {
-            sendData(data_[i]);
-            data_[i]->isSent = true;
-        }
+void Client::Connection::sendCurrentWindow(bool isFirst) {
+    if (isFirst) {
+        unACKedCounter_ = windowSize_;
+    }
+    for (int i = 0; i < unACKedCounter_ && i < data_.size(); i++) {
+        sendData(data_[i]);
     }
     markStartTime();
     registerEvents();
@@ -306,12 +319,7 @@ void Client::Connection::sendFirstBatch() {
 
 void Client::Connection::resend() {
     std::cout << "Resend data\n";
-    for (int i = 0; i < windowSize_ && i < data_.size(); i++) {
-        sendData(data_[i]);
-        if (data_[i]->isSent == false) {
-            data_[i]->isSent = true;
-        }
-    }
+    sendData(data_[0]);
     markStartTime();
     registerEvents();
 }
@@ -336,8 +344,10 @@ void Client::Connection::calculateTime() {
     time_t sampleRTTSec = timeEnd_.tv_sec - timeStart_.tv_sec;
     time_t sampleRTTUSec = timeEnd_.tv_usec - timeStart_.tv_usec;
     // New RTT is average of current RTT and time between timeStart and timeEnd
-    devRTT_.tv_sec = ((1000 - BETA) * devRTT_.tv_sec + BETA * abs(sampleRTTSec - RTT_.tv_sec)) / 1000;
-    devRTT_.tv_usec = ((1000 - BETA) * devRTT_.tv_usec + BETA * abs(sampleRTTUSec - RTT_.tv_usec)) / 1000;
+    devRTT_.tv_sec = ((1000 - BETA) * devRTT_.tv_sec +
+            BETA * abs(sampleRTTSec - RTT_.tv_sec)) / 1000;
+    devRTT_.tv_usec = ((1000 - BETA) * devRTT_.tv_usec +
+            BETA * abs(sampleRTTUSec - RTT_.tv_usec)) / 1000;
     RTT_.tv_sec = ((1000 - ALPHA) * RTT_.tv_sec + ALPHA * sampleRTTSec) / 1000;
     RTT_.tv_usec = ((1000 - ALPHA) * RTT_.tv_usec + ALPHA * sampleRTTUSec) / 1000;
     // Calculate new RTO
