@@ -73,8 +73,8 @@ void Server::registerEvents() {
     }
 
     if (socket_ >= 0) {
-        listenEvent_ = event_new(eventBase_, socket_, EV_READ | EV_PERSIST, Server::listenHandler,
-                this);
+        listenEvent_ = event_new(eventBase_, socket_, EV_READ | EV_PERSIST, 
+                Server::listenHandler, this);
         if (event_add(listenEvent_, 0) == -1) {
             perror("registerEvents() - eventadd()");
             return;
@@ -112,13 +112,15 @@ void Server::listenHandler(int fd, short what, void* v) {
     Connection* conn;
     if ((conn = server->getConnection(clientAddr)) == NULL) {
         std::cout << "Created connection\n";
-        conn = new Connection(server->socket_, clientAddr, CLOSED, server->eventBase_);
+        conn = new Connection(server->socket_, clientAddr, CLOSED, 
+                server->eventBase_);
         server->addConnection(conn);
     }
     conn->transition(buffer);
 }
 
-Server::Connection::Connection(int socket, sockaddr_in* clientAddr, uint8_t state, event_base* EVB) {
+Server::Connection::Connection(int socket, sockaddr_in* clientAddr, 
+        uint8_t state, event_base* EVB) {
     socket_ = socket;
     clientAddr_ = clientAddr;
     state_ = state;
@@ -198,29 +200,32 @@ void Server::Connection::transition(uint8_t* buffer) {
         // Check if receive correct packet
         std::cout << "Compare: " << receivedHeader.sequenceNumber << " - " <<
                 receiveBase_ << std::endl;
+        // Search maximum contiguous received data number
+        std::map<uint32_t, Data*>::iterator searchResult;
         if (receivedHeader.sequenceNumber == receiveBase_) {
             receiveBase_ += receivedHeader.length;
-            PacketHeader sendHeader;
-            sendHeader.type = ACK;
-            sendHeader.acknowledgmentNumber = receiveBase_;
-            sendHeader.windowSize = WINDOW_SIZE;
-            sendPacket(socket_, clientAddr_, &sendHeader, NULL, 0);
+            while ((searchResult = chunks_.find(receiveBase_)) !=
+                    chunks_.end()) {
+                receiveBase_ += (*searchResult).second->length;
+            }
+        }
+        // Send ACK to client
+        PacketHeader sendHeader;
+        sendHeader.type = ACK;
+        sendHeader.acknowledgmentNumber = receiveBase_;
+        sendHeader.windowSize = WINDOW_SIZE;
+        sendPacket(socket_, clientAddr_, &sendHeader, NULL, 0);
+        // Save the receive data if it is not in saved chunks
+        if ((searchResult = chunks_.find(receivedHeader.sequenceNumber)) ==
+                chunks_.end()) {
             uint8_t* data = new uint8_t[receivedHeader.length];
             processData(buffer, data, receivedHeader.length);
             std::cout << "Processed data\n";
-            Data* strData = new Data();
-            strData->data = data;
-            strData->length = receivedHeader.length;
-            // Store in memory
-            data_.push_back(strData);
-            // Send ACK to client
-            // std::cout << "Sent ACK with sequence number: " << receiveBase_;
-        } else {
-            PacketHeader sendHeader;
-            sendHeader.type = ACK;
-            sendHeader.acknowledgmentNumber = receiveBase_;
-            sendHeader.windowSize = WINDOW_SIZE;
-            sendPacket(socket_, clientAddr_, &sendHeader, NULL, 0);
+            Data* structData = new Data();
+            structData->data = data;
+            structData->length = receivedHeader.length;
+            chunks_.insert(std::make_pair<uint32_t, Data*>(
+                    receivedHeader.sequenceNumber, structData));
         }
     }
 }
@@ -266,9 +271,10 @@ void Server::Connection::writeToFile() {
     if (!fStream) {
         perror("open()");
     }
-    std::list<Data*>::iterator pList;
-    for (pList = data_.begin(); pList != data_.end(); pList++) {
-        fStream.write(reinterpret_cast<char*> ((*pList)->data), (*pList)->length);
+    std::map<uint32_t, Data*>::iterator pChunk;
+    for (pChunk = chunks_.begin(); pChunk != chunks_.end(); pChunk++) {
+        fStream.write(reinterpret_cast<char*> ((*pChunk).second->data),
+                (*pChunk).second->length);
     }
     fStream.close();
 }

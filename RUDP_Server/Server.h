@@ -45,7 +45,7 @@ public:
         uint8_t state_;
         uint32_t receiveBase_;
         uint32_t sendBase_;
-        std::list<Data*> data_;
+        std::map<uint32_t, Data*> chunks_;
         event_base* eventBase_;
         event* timeoutEvent_;
         timeval timeout_;
