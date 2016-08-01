@@ -10,8 +10,12 @@
 
 #include <assert.h>
 #include <stdint.h>
-#include<sys/socket.h>
-#include<netinet/in.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <string.h>
+#include <stdio.h>
+#include <iostream>
+#include <boost/chrono.hpp>
 
 /* State define */
 #define LISTEN 1  // Server listening
@@ -55,7 +59,7 @@ struct Data {
     uint32_t length;
     uint32_t sequenceNumber;
     bool isEnd;
-    bool isSent;
+    timeval sentTime;
 };
 
 void sendPacket(int fd, sockaddr_in* addr, PacketHeader* header, uint8_t* data, 

@@ -5,10 +5,7 @@
  * Created on July 20, 2016, 3:19 PM
  */
 
-#include <string.h>
-#include <sys/socket.h>
-#include <stdio.h>
-#include <iostream>
+
 #include "Common.h"
 
 void processHeader(uint8_t* buffer, PacketHeader* header) {
@@ -24,7 +21,6 @@ void sendPacket(int fd, sockaddr_in* addr, PacketHeader* header, uint8_t* data,
     int bufferSize = 1472;
     uint8_t buffer[bufferSize];
     memset(buffer, 0, bufferSize);
-    std::cout << "Sent header: " << (int) header->type << std::endl;
     memcpy(buffer, header, sizeof (PacketHeader));
     if (data != NULL) {
         memcpy(buffer + sizeof (PacketHeader), data, dataLength);

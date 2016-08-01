@@ -99,7 +99,7 @@ void Server::stop() {
 }
 
 void Server::listenHandler(int fd, short what, void* v) {
-    std::cout << "Received 1 packet\n";
+//    std::cout << "Received 1 packet\n";
     Server* server = (Server*) v;
     // Receive a whole packet (1450 bytes) from client
     int bufferSize = 1472;
@@ -131,7 +131,7 @@ Server::Connection::Connection(int socket, sockaddr_in* clientAddr,
 }
 
 void Server::Connection::transition(uint8_t* buffer) {
-    std::cout << "Transition\n";
+//    std::cout << "Transition\n";
     PacketHeader receivedHeader;
     processHeader(buffer, &receivedHeader);
     std::cout << "Header type: " << (int) receivedHeader.type << std::endl;
@@ -220,7 +220,7 @@ void Server::Connection::transition(uint8_t* buffer) {
                 chunks_.end()) {
             uint8_t* data = new uint8_t[receivedHeader.length];
             processData(buffer, data, receivedHeader.length);
-            std::cout << "Processed data\n";
+//            std::cout << "Processed data\n";
             Data* structData = new Data();
             structData->data = data;
             structData->length = receivedHeader.length;

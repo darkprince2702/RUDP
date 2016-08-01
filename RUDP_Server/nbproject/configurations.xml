@@ -45,6 +45,7 @@
         <linkerTool>
           <linkerLibItems>
             <linkerLibLibItem>event</linkerLibLibItem>
+            <linkerLibLibItem>boost_system</linkerLibLibItem>
           </linkerLibItems>
         </linkerTool>
       </compileType>
