@@ -54,7 +54,7 @@ FFLAGS=
 ASFLAGS=
 
 # Link Libraries and Options
-LDLIBSOPTIONS=-levent
+LDLIBSOPTIONS=-levent -lboost_system -lboost_chrono
 
 # Build Targets
 .build-conf: ${BUILD_SUBPROJECTS}

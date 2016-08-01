@@ -11,8 +11,9 @@
  * Created on July 25, 2016, 5:08 PM
  */
 
-#include "Client.h"
+#include <sys/param.h>
 
+#include "Client.h"
 
 Client::Client() {
     socket_ = -1;
@@ -84,7 +85,6 @@ void Client::send(uint8_t* data, uint32_t size) {
             seqNo += chunk->length;
             chunk->data = new uint8_t[chunk->length];
             memcpy(chunk->data, data + i * 1450, chunk->length);
-            chunk->isSent = false;
         } else {
             chunk->length = size % 1450;
             if (chunk->length == 0) {
@@ -94,7 +94,6 @@ void Client::send(uint8_t* data, uint32_t size) {
             seqNo += chunk->length;
             chunk->data = new uint8_t[chunk->length];
             memcpy(chunk->data, data + i * 1450, chunk->length);
-            chunk->isSent = false;
             chunk->isEnd = true;
         }
         connection_->addData(chunk);
@@ -124,7 +123,7 @@ void Client::Connection::registerEvents() {
 }
 
 void Client::listenHandler(int fd, short what, void* v) {
-    std::cout << "Receive 1 packet\n";
+//    std::cout << "Receive 1 packet\n";
     Client* client = (Client*) v;
     uint8_t* buffer = new uint8_t[1472];
     unsigned int addrLen = sizeof (sockaddr_in);
@@ -144,6 +143,9 @@ Client::Connection::Connection(int socket, sockaddr_in* serverAddr,
     receiveBase_ = 0;
     RTO_.tv_sec = 1;
     duplicateACK_ = 0;
+    congestionWindow_ = 1;
+    threshold_ = 64;
+    congestionState_ = 0;
 }
 
 void Client::Connection::transition(uint8_t* buffer) {
@@ -177,7 +179,7 @@ void Client::Connection::transition(uint8_t* buffer) {
             // Received a SYN-ACK from server, send ACK back
             markEndTime();
             calculateTime();
-            windowSize_ = receivedHeader.windowSize;
+            receivedWindow_ = receivedHeader.windowSize;
             sendBase_ = receivedHeader.acknowledgmentNumber;
             receiveBase_ = receivedHeader.acknowledgmentNumber + 1;
             sendACK(receiveBase_);
@@ -201,8 +203,8 @@ void Client::Connection::transition(uint8_t* buffer) {
             breakLoop();
         }
         if (receivedHeader.type == ACK) {
-            markEndTime();
-            calculateTime();
+            //            markEndTime();
+            //            calculateTime();
             if (state_ == FIN_WAIT_1) {
                 // Switch to FIN-WAIT-2
                 state_ = FIN_WAIT_2;
@@ -211,6 +213,7 @@ void Client::Connection::transition(uint8_t* buffer) {
                 state_ = TIME_WAIT;
                 // @TODO: 2MLS timeout and close
             } else if (state_ == ESTABLISHED) {
+                calculateTimeByData(receivedHeader.acknowledgmentNumber);
                 // Check if ackNo is compatible with send base
                 if (receivedHeader.acknowledgmentNumber == endACK_) {
                     // Server receive all data, break loop and exit
@@ -221,27 +224,41 @@ void Client::Connection::transition(uint8_t* buffer) {
                         << " - " << sendBase_ << std::endl;
                 if (receivedHeader.acknowledgmentNumber >= sendBase_) {
                     // Remove all ACKed chunk and decrease UnACKed counter
+                    /*
                     while (data_.size() && data_[0]->sequenceNumber
                             < receivedHeader.acknowledgmentNumber) {
                         data_.erase(data_.begin());
                         unACKedCounter_--;
+                    } 
+                     */
+                    while (chunks_.size() && sendBase_
+                            < receivedHeader.acknowledgmentNumber) {
+                        boost::unordered_map<uint32_t, Data*>::iterator pChunks;
+                        if ((pChunks = chunks_.find(sendBase_))
+                                != chunks_.end()) {
+                            sendBase_ += (*pChunks).second->length;
+                            chunks_.erase(pChunks);
+                        }
+                        unACKedCounter_--;
                     }
+
                     // Update the send base an unACKed counter
-                    sendBase_ = receivedHeader.acknowledgmentNumber;
                     if (unACKedCounter_ <= 0) {
-                        unACKedCounter_ = windowSize_;
+                        unACKedCounter_ = receivedWindow_;
                         sendCurrentWindow();
                     }
-                    // Fast retransmit after 3 duplicate ACK
-//                    if (receivedHeader.acknowledgmentNumber == lastestACK_) {
-//                        if (++duplicateACK_ >= 3) {
-//                            std::cout << "3 duplicate ACK, resend packet\n";
-//                            resend();
-//                        }
-//                    } else {
-//                        lastestACK_ = receivedHeader.acknowledgmentNumber;
-//                        duplicateACK_ = 0;
-//                    }
+                    // 3 duplicate ACK, handle congestion
+                    if (receivedHeader.acknowledgmentNumber == lastestACK_) {
+                        if (++duplicateACK_ >= 3) {
+                            threshold_ = congestionWindow_ <= 2 ? 
+                                1 : congestionWindow_ / 2;
+                            congestionWindow_ = threshold_;
+                            congestionState_ = 1;
+                        }
+                    } else {
+                        lastestACK_ = receivedHeader.acknowledgmentNumber;
+                        duplicateACK_ = 0;
+                    }
                 }
                 registerEvents();
             }
@@ -274,7 +291,8 @@ void Client::Connection::sendData(Data* data) {
 }
 
 void Client::Connection::addData(Data* data) {
-    data_.push_back(data);
+    //    data_.push_back(data);
+    chunks_.insert(std::make_pair(data->sequenceNumber, data));
 }
 
 void Client::Connection::breakLoop() {
@@ -307,20 +325,47 @@ void Client::Connection::timeoutHandler(int fd, short what, void* v) {
 }
 
 void Client::Connection::sendCurrentWindow(bool isFirst) {
-    if (isFirst) {
-        unACKedCounter_ = windowSize_;
-    }
+    unACKedCounter_ = getWindow();
+    std::cout << "Current windows is: " << unACKedCounter_ << std::endl;
+    /*
     for (int i = 0; i < unACKedCounter_ && i < data_.size(); i++) {
         sendData(data_[i]);
     }
-    markStartTime();
+     */
+    int i = 0;
+    uint32_t sendChunk = sendBase_;
+    Data* pData;
+    while (i < unACKedCounter_ && i < chunks_.size()) {
+        pData = chunks_[sendChunk];
+        sendData(pData);
+        gettimeofday(&(pData->sentTime), NULL);
+//        pData->sentTime = boost::chrono::high_resolution_clock::now();
+        sendChunk += pData->length;
+        i++;
+    }
+    if (congestionState_ == 0) {
+        congestionWindow_ *= 2;
+    } else {
+        congestionWindow_++;
+    }
+    if (congestionWindow_ > threshold_) {
+        congestionState_ = 1;
+    }
+    
+    //    markStartTime();
     registerEvents();
 }
 
 void Client::Connection::resend() {
     std::cout << "Resend data\n";
-    sendData(data_[0]);
-    markStartTime();
+    Data* pData = chunks_[sendBase_];
+    sendData(pData);
+    gettimeofday(&(pData->sentTime), NULL);
+    // Change congestion windows
+    threshold_ = congestionWindow_ / 2;
+    congestionWindow_ = 1;
+    congestionState_ = 0;
+    //    markStartTime();
     registerEvents();
 }
 
@@ -342,7 +387,7 @@ void Client::Connection::markEndTime() {
 
 void Client::Connection::calculateTime() {
     time_t sampleRTTSec = timeEnd_.tv_sec - timeStart_.tv_sec;
-    time_t sampleRTTUSec = timeEnd_.tv_usec - timeStart_.tv_usec;
+    suseconds_t sampleRTTUSec = timeEnd_.tv_usec - timeStart_.tv_usec;
     // New RTT is average of current RTT and time between timeStart and timeEnd
     devRTT_.tv_sec = ((1000 - BETA) * devRTT_.tv_sec +
             BETA * abs(sampleRTTSec - RTT_.tv_sec)) / 1000;
@@ -353,8 +398,36 @@ void Client::Connection::calculateTime() {
     // Calculate new RTO
     RTO_.tv_sec = RTT_.tv_sec + 4 * devRTT_.tv_sec;
     RTO_.tv_usec = RTT_.tv_usec + 4 * devRTT_.tv_usec;
-//    std::cout << "New RTT: " << RTT_.tv_sec << " sec, " << RTT_.tv_usec <<
-//            " microsecond\n";
-//    std::cout << "New RTO: " << RTO_.tv_sec << " sec, " << RTO_.tv_usec <<
-//            " microsecond\n";
+    //    std::cout << "New RTT: " << RTT_.tv_sec << " sec, " << RTT_.tv_usec <<
+    //            " microsecond\n";
+    //    std::cout << "New RTO: " << RTO_.tv_sec << " sec, " << RTO_.tv_usec <<
+    //            " microsecond\n";
+}
+
+void Client::Connection::calculateTimeByData(uint32_t ACKNum) {
+    boost::unordered_map<uint32_t, Data*>::iterator pChunks;
+    if ((pChunks = chunks_.find(ACKNum)) != chunks_.end()) {
+        timeval now;
+        gettimeofday(&now, NULL);
+        time_t sampleRTTSec = now.tv_sec - pChunks->second->sentTime.tv_sec;
+        suseconds_t sampleRTTUSec = now.tv_usec - pChunks->second->sentTime.tv_usec;
+        devRTT_.tv_sec = ((1000 - BETA) * devRTT_.tv_sec +
+                BETA * abs(sampleRTTSec - RTT_.tv_sec)) / 1000;
+        devRTT_.tv_usec = ((1000 - BETA) * devRTT_.tv_usec +
+                BETA * abs(sampleRTTUSec - RTT_.tv_usec)) / 1000;
+        RTT_.tv_sec = ((1000 - ALPHA) * RTT_.tv_sec + ALPHA * sampleRTTSec) / 1000;
+        RTT_.tv_usec = ((1000 - ALPHA) * RTT_.tv_usec + ALPHA * sampleRTTUSec) / 1000;
+        // Calculate new RTO
+        RTO_.tv_sec = RTT_.tv_sec + 4 * devRTT_.tv_sec;
+        RTO_.tv_usec = RTT_.tv_usec + 4 * devRTT_.tv_usec;
+        std::cout << "New RTT: " << RTT_.tv_sec << " sec, " << RTT_.tv_usec <<
+                " microsecond\n";
+        std::cout << "New RTO: " << RTO_.tv_sec << " sec, " << RTO_.tv_usec <<
+                " microsecond\n";
+    }
+}
+
+uint16_t Client::Connection::getWindow() {
+//    return MIN(receivedWindow_, congestionWindow_);
+    return congestionWindow_;
 }

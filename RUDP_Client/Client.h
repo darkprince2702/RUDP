@@ -25,6 +25,7 @@
 #include <string>
 #include <cstring>
 #include <list>
+#include <boost/unordered_map.hpp>
 
 class Client {
 public:
@@ -54,6 +55,8 @@ public:
         void markStartTime();
         void markEndTime();
         void calculateTime();
+        void calculateTimeByData(uint32_t ACKNum);
+        uint16_t getWindow();
         int nTimeout;
     private:
         int socket_;
@@ -66,9 +69,13 @@ public:
         uint32_t lastestACK_;
         uint8_t duplicateACK_;
         std::vector<Data*> data_;
+        boost::unordered_map<uint32_t, Data*> chunks_;
         event_base* eventBase_;
         event* timeoutEvent_;
-        uint16_t windowSize_;
+        uint16_t receivedWindow_;
+        uint16_t congestionWindow_;
+        uint16_t threshold_;
+        uint8_t congestionState_;
         timeval RTT_;
         timeval devRTT_;
         timeval RTO_;

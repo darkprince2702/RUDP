@@ -53,6 +53,8 @@
         <linkerTool>
           <linkerLibItems>
             <linkerLibLibItem>event</linkerLibLibItem>
+            <linkerLibLibItem>boost_system</linkerLibLibItem>
+            <linkerLibLibItem>boost_chrono</linkerLibLibItem>
           </linkerLibItems>
         </linkerTool>
       </compileType>
